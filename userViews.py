@@ -8,20 +8,38 @@ from flask.ext.httpauth import HTTPBasicAuth
 auth = HTTPBasicAuth()
 
 
-engine = create_engine('sqlite:///users.db')
+engine = create_engine('sqlite:///usersWithTokens.db')
 
 Base.metadata.bind = engine
 DBSession = sessionmaker(bind=engine)
 session = DBSession()
 app = Flask(__name__)
 
+
+
+
+
 @auth.verify_password
-def verify_password(username, password):
-    user = session.query(User).filter_by(username = username).first()
-    if not user or not user.verify_password(password):
-        return False
+def verify_password(username_or_token, password):
+    #Try to see if it's a token first
+    user_id = User.verify_auth_token(username_or_token)
+    if user_id:
+        user = session.query(User).filter_by(id = user_id).one()
+    else:
+        user = session.query(User).filter_by(username = username_or_token).first()
+        if not user or not user.verify_password(password):
+            return False
     g.user = user
     return True
+
+
+
+@app.route('/token')
+@auth.login_required
+def get_auth_token():
+    token = g.user.generate_auth_token()
+    return jsonify({'token': token.decode('ascii')})
+
 
 
 @app.route('/users', methods = ['POST'])
@@ -59,4 +77,5 @@ def get_resource():
 
 if __name__ == '__main__':
     app.debug = True
+    #app.config['SECRET_KEY'] = ''.join(random.choice(string.ascii_uppercase + string.digits) for x in xrange(32))
     app.run(host='0.0.0.0', port=5000)
